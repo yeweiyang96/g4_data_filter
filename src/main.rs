@@ -57,7 +57,7 @@ fn to_csv(entry: &DirEntry) -> Result<(), Box<dyn Error>> {
                 row.push(part.to_string());
             } else if count == 7{
                 row.push(part.to_string());
-                row.push(String::new());
+                row.push(String::from(" "));
             } else {
                 row[8] = row.get(8).unwrap().to_string() + " "+ part;  
             }
