@@ -84,5 +84,5 @@ fn main() {
         to_csv(&entry).expect("fuck");
         count+=1;
     }
-    println!("There are {} .txt files.",count)
+    println!("Done.There are {} .txt files.",count)
 }
