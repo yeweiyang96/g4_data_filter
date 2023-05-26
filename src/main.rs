@@ -39,13 +39,6 @@ fn to_csv(entry: &DirEntry) -> Result<(), Box<dyn Error>> {
         .read(true)
         .open(entry.path())
         .expect("read_file");
-    let reader = BufReader::new(read_file);
-    let mut index =0;
-    let mut lines_iter = reader.lines().map(|l| l.unwrap());
-
-    for _ in 0..3{
-        lines_iter.next();
-    }
 
     for line in lines_iter {
         index +=1;
