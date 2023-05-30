@@ -1,14 +1,12 @@
 extern crate csv;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use std::fmt::format;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::{prelude::*, BufReader};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::PathBuf;
 use walkdir::{DirEntry, WalkDir};
-use walkdir::{Error, Result};
+use walkdir::Result;
 
 lazy_static! {
     static ref HM: HashMap<&'static str, u8> = {
@@ -90,7 +88,7 @@ fn main() {
         .filter_entry(|entry| !is_hidden(entry))
         .skip(1)
     {
-        sort(directory.unwrap().into_path());
+        sort(directory.unwrap().into_path()).unwrap();
     }
 }
 
@@ -98,7 +96,7 @@ fn sort(root: PathBuf) -> Result<()> {
     let root_name = root.file_name().unwrap().to_str().unwrap();
     let mut file_map: HashMap<String, Vec<String>> = HashMap::new();
 
-    let mut map:HashMap<String, [u8;3]> = HashMap::new();
+
     for entry in WalkDir::new(&root)
         .max_depth(1)
         .into_iter()
@@ -109,31 +107,7 @@ fn sort(root: PathBuf) -> Result<()> {
         let file_parts: Vec<&str> = file_name.splitn(2, ".").collect();
         let a = file_parts[0].to_owned();
         let b = file_parts[1].to_owned();
-        // println!("{} {}",a, b);
-        // let score = *(HM.get(b.as_str()).unwrap());
-        // match score {
-        //     1|2|3 => {
-        //         if score > map.get(&a).unwrap()[0] {
-        //             map.insert(a, [score,0,0]);
-        //         }
-        //     },
-        //     4|5|6 => {
-        //         if score > map.get(&a).unwrap()[1] {
-        //             map.insert(a, [0,score,0]);
-        //         }
-        //     },
-        //     7|8|9 => {
-        //         if score > map.get(&a).unwrap()[2] {
-        //             map.insert(a, [0,0,score]);
-        //         }   
-        //     },
-        //     _ => {}
-        // }
-                
-        // map.get_mut("chromosome-1-1").unwrap()[0]=9;
-        // println!("{:?}",map);
-        
-
+ 
         if let Some(files) = file_map.get_mut(&a) {
             files.push(b);
         } else {
@@ -150,11 +124,10 @@ fn sort(root: PathBuf) -> Result<()> {
         let mut complement_file = String::new();
         let mut r_c: u8 = 0;
         let mut r_c_file = String::new();
-        // let files = files.iter().map(|x| x.to_path_buf());
+
 
         for file in files {
-            // let file_name = &file.file_name().unwrap().to_str().unwrap();
-            // let second_part = file_name.splitn(2, ".").skip(1).next().unwrap();
+
             let score = HM.get(file.as_str()).unwrap();
             if file.contains("r") {
                 if score > &mut r_c {
@@ -178,7 +151,7 @@ fn sort(root: PathBuf) -> Result<()> {
             fs::create_dir(new_path).unwrap();
         }
 
-        let first_name: String = format!("{}-{}", root_name, folder_name);
+        let first_name: String = format!("{}.{}", root_name, folder_name);
 
         let upstream_file = build_path(format!("{}.{}",&folder_name,&upstream_file), &root);
         let complement_file = build_path(format!("{}.{}",&folder_name,&complement_file), &root);
@@ -190,12 +163,12 @@ fn sort(root: PathBuf) -> Result<()> {
         if complement != 0 {
             to_csv(
                 complement_file,
-                new_path.join(format!("{}-c.csv", first_name)),
+                new_path.join(format!("{}.c.csv", first_name)),
             )
             .unwrap();
         }
         if r_c != 0 {
-            to_csv(r_c_file, new_path.join(format!("{}-cr.csv", first_name))).unwrap();
+            to_csv(r_c_file, new_path.join(format!("{}.cr.csv", first_name))).unwrap();
         }
     }
     Ok(())
