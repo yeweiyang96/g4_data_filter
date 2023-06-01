@@ -5,8 +5,9 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::{prelude::*, BufReader};
 use std::path::PathBuf;
-use walkdir::{DirEntry, WalkDir};
+use std::process::Command;
 use walkdir::Result;
+use walkdir::{DirEntry, WalkDir};
 
 lazy_static! {
     static ref HM: HashMap<&'static str, u8> = {
@@ -33,6 +34,14 @@ fn is_hidden(entry: &DirEntry) -> bool {
         .unwrap_or(false)
 }
 
+fn is_txt(entry: &DirEntry) -> bool {
+    entry
+        .file_name()
+        .to_str()
+        .map(|s| s.ends_with(".txt"))
+        .unwrap_or(false)
+}
+
 fn to_csv(input: PathBuf, output: PathBuf) -> Result<()> {
     let mut wtr = csv::Writer::from_path(output).unwrap();
     let read_file = OpenOptions::new()
@@ -42,26 +51,36 @@ fn to_csv(input: PathBuf, output: PathBuf) -> Result<()> {
 
     let mut index = 0;
     let lines_iter = BufReader::new(read_file).lines().skip(3);
-    wtr.write_record(&["T1", "T2", "T3", "T4", "TS", "GS", "SEQ", "Annotation"])
-        .expect("header fail");
+    wtr.write_record(&[
+        "ID",
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "TS",
+        "GS",
+        "SEQ",
+        "Annotation",
+    ])
+    .expect("header fail");
     for line in lines_iter {
         index += 1;
         let mut row: Vec<String> = Vec::new();
         let mut count: u8 = 0;
         let line = line.unwrap();
 
-        for part in line.split_whitespace().skip(1) {
-            if count < 6 {
+        for part in line.split_whitespace() {
+            if count < 7 {
                 row.push(part.to_string());
-            } else if count == 6 {
+            } else if count == 7 {
                 row.push(part.to_string());
                 row.push(String::new());
             } else {
-                row[7] = row.get(7).unwrap().to_string() + " " + part;
+                row[8] = row.get(8).unwrap().to_string() + " " + part;
             }
             count += 1;
         }
-        if row.len() != 8 {
+        if row.len() != 9 {
             println!(
                 "Unlegal Data: '{}' in {}: {}row",
                 &line,
@@ -81,54 +100,77 @@ fn main() {
     let path = &args[1];
     println!("Start: {}", path);
 
-
-    for directory in WalkDir::new(path)
+    // for directory in WalkDir::new(path)
+    //     .max_depth(1)
+    //     .into_iter()
+    //     .filter_entry(|entry| !is_hidden(entry))
+    //     .skip(1)
+    // {
+    //     sort(directory.unwrap().into_path(), path).unwrap();
+    // }
+    let mut index = 0;
+    for file in WalkDir::new(format!("{}/csv_files", path))
         .max_depth(1)
         .into_iter()
-        .filter_entry(|entry| !is_hidden(entry))
         .skip(1)
     {
-        sort(directory.unwrap().into_path()).unwrap();
+        let file = file.unwrap().into_path();
+        import_csv(file);
+        index += 1;
     }
+    println!("{} files imported", index);
+    println!("Done");
 }
 
-fn sort(root: PathBuf) -> Result<()> {
-    let root_name = root.file_name().unwrap().to_str().unwrap();
+fn analyse_files(walkdir: WalkDir) -> HashMap<String, Vec<String>> {
     let mut file_map: HashMap<String, Vec<String>> = HashMap::new();
-
-
-    for entry in WalkDir::new(&root)
+    let walkdir = walkdir
         .max_depth(1)
         .into_iter()
-        .filter_entry(|e| !is_hidden(e)).filter(|e| e.as_ref().unwrap().path().is_file())
-    {
-        let path = entry?.into_path();
-        let file_name = &path.file_name().unwrap().to_str().unwrap();
+        .filter(|e| is_txt(e.as_ref().unwrap()));
+
+    for entry in walkdir {
+        //let path = entry.unwrap().path();
+        let file_name = entry
+            .unwrap()
+            .path()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
         let file_parts: Vec<&str> = file_name.splitn(2, ".").collect();
-        let a = file_parts[0].to_owned();
-        let b = file_parts[1].to_owned();
- 
-        if let Some(files) = file_map.get_mut(&a) {
-            files.push(b);
+        if let Some(files) = file_map.get_mut(file_parts[0]) {
+            files.push(file_parts[1].to_string());
         } else {
-            file_map.insert(a, vec![b]);
+            file_map.insert(file_parts[0].to_string(), vec![file_parts[1].to_string()]);
         }
     }
+    file_map
+}
 
+fn sort(root: PathBuf, path: &String) -> Result<()> {
+    let root_name = root.file_name().unwrap().to_str().unwrap();
+    let walkdir = WalkDir::new(&root);
+    let file_map = analyse_files(walkdir);
+    let new_path = PathBuf::from(path).join("csv_files");
+    if !fs::metadata(&new_path).is_ok() {
+        fs::create_dir(&new_path).unwrap();
+    }
+
+    // filemap is (one chromosome,[all files in this chromosome])
     for (folder_name, files) in file_map {
-        let new_path = &root.join(&folder_name);
-        
+        let files = files.iter().map(|e| e.as_str());
         let mut upstream: u8 = 0;
-        let mut upstream_file = String::new();
+        let mut upstream_file = "";
         let mut complement: u8 = 0;
-        let mut complement_file = String::new();
+        let mut complement_file = "";
         let mut r_c: u8 = 0;
-        let mut r_c_file = String::new();
-
+        let mut r_c_file = "";
 
         for file in files {
-
-            let score = HM.get(file.as_str()).unwrap();
+            let file = file;
+            let score = HM.get(file).unwrap();
             if file.contains("r") {
                 if score > &mut r_c {
                     r_c = *score;
@@ -147,28 +189,24 @@ fn sort(root: PathBuf) -> Result<()> {
             }
         }
 
-        if !fs::metadata(new_path).is_ok() {
-            fs::create_dir(new_path).unwrap();
-        }
+        let file_name: String = format!("{}${}", root_name, folder_name.replace("-", "_"));
 
-        let first_name: String = format!("{}.{}", root_name, folder_name);
-
-        let upstream_file = build_path(format!("{}.{}",&folder_name,&upstream_file), &root);
-        let complement_file = build_path(format!("{}.{}",&folder_name,&complement_file), &root);
-        let r_c_file = build_path(format!("{}.{}",&folder_name,&r_c_file), &root);
+        let upstream_file = build_path(format!("{}.{}", &folder_name, &upstream_file), &root);
+        let complement_file = build_path(format!("{}.{}", &folder_name, &complement_file), &root);
+        let r_c_file = build_path(format!("{}.{}", &folder_name, &r_c_file), &root);
 
         if upstream != 0 {
-            to_csv(upstream_file, new_path.join(format!("{}.csv", first_name))).unwrap();
+            to_csv(upstream_file, new_path.join(format!("{}.csv", file_name))).unwrap();
         }
         if complement != 0 {
             to_csv(
                 complement_file,
-                new_path.join(format!("{}.c.csv", first_name)),
+                new_path.join(format!("{}$c.csv", file_name)),
             )
             .unwrap();
         }
         if r_c != 0 {
-            to_csv(r_c_file, new_path.join(format!("{}.cr.csv", first_name))).unwrap();
+            to_csv(r_c_file, new_path.join(format!("{}$rc.csv", file_name))).unwrap();
         }
     }
     Ok(())
@@ -178,4 +216,34 @@ fn build_path(s: String, root_path: &PathBuf) -> PathBuf {
     let mut path = root_path.clone();
     path.push(s);
     path
+}
+
+fn import_csv(csv_file: PathBuf) {
+    let table_name = csv_file
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string()
+        .replace(".csv", "");
+    let create_table = String::from(format!("CREATE TABLE IF NOT EXISTS {} (`ID` UInt32, `T1` UInt32, `T2` UInt32, `T3` UInt32, `T4` UInt32, `TS` UInt32, `GS` UInt32, `SEQ` String, `Annotation` String) ENGINE = MergeTree() PRIMARY KEY ID ORDER BY ID SETTINGS index_granularity = 8192, index_granularity_bytes = 0;",table_name));
+    let import_data = String::from(format!(
+        "INSERT INTO {} FROM INFILE '{}' FORMAT CSV;",
+        table_name,
+        csv_file.display()
+    ));
+    let sql = format!("{}{}", &create_table, &import_data);
+    let output = Command::new("/Users/wangzekun/clickhouse/clickhouse")
+    .arg("client")
+        .args(["-d", "default"])
+        .arg("-q")
+        .arg(&import_data)
+        .output()
+        .expect("Failed to execute command");
+    if output.status.success() {
+        println!("Table {} imported successfully", table_name);
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("Failed to import table {}. Error:\n{}", table_name, stderr);
+    }
 }
