@@ -233,7 +233,7 @@ fn import_csv(csv_file: PathBuf) {
         csv_file.display()
     ));
     let sql = format!("{}{}", &create_table, &import_data);
-    let output = Command::new("/Users/wangzekun/clickhouse/clickhouse")
+    let output = Command::new("./clickhouse")
     .arg("client")
         .args(["-d", "default"])
         .arg("-q")
