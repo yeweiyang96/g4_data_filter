@@ -100,14 +100,14 @@ fn main() {
     let path = &args[1];
     println!("Start: {}", path);
 
-    // for directory in WalkDir::new(path)
-    //     .max_depth(1)
-    //     .into_iter()
-    //     .filter_entry(|entry| !is_hidden(entry))
-    //     .skip(1)
-    // {
-    //     sort(directory.unwrap().into_path(), path).unwrap();
-    // }
+    for directory in WalkDir::new(path)
+        .max_depth(1)
+        .into_iter()
+        .filter_entry(|entry| !is_hidden(entry))
+        .skip(1)
+    {
+        sort(directory.unwrap().into_path(), path).unwrap();
+    }
     let mut index = 0;
     for file in WalkDir::new(format!("{}/csv_files", path))
         .max_depth(1)
@@ -237,7 +237,7 @@ fn import_csv(csv_file: PathBuf) {
     .arg("client")
         .args(["-d", "default"])
         .arg("-q")
-        .arg(&import_data)
+        .arg(&sql)
         .output()
         .expect("Failed to execute command");
     if output.status.success() {
