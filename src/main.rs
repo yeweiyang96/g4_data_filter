@@ -48,7 +48,7 @@ fn handle(child: PathBuf, root_path: &String) -> Result<String>{
     let child_name = child.file_name().unwrap().to_str().unwrap();
     let walkdir = WalkDir::new(&child);
     let file_map = analyse_files(walkdir);
-    let new_path = PathBuf::from(root_path).join("csv_files");
+    let new_path = PathBuf::from(root_path).join(".csv_files");
     println!("Start to handle {}", child_name);
     if !fs::metadata(&new_path).is_ok() {
         fs::create_dir(&new_path).unwrap();
@@ -129,7 +129,7 @@ fn import_csv(csv_file: PathBuf) {
     ));
 
     let sql = format!("{}{}", &create_table, &import_data);
-    Command::new("./clickhouse")
+    Command::new("/Users/wangzekun/clickhouse/clickhouse")
         .arg("client")
         .args(["-d", "default"])
         .arg("-q")
@@ -139,8 +139,8 @@ fn import_csv(csv_file: PathBuf) {
 }
 
 fn insert_name(name: &str) -> Result<bool> {
-    let sql = format!("INSERT INTO `name_list` VALUES ('{}', []);", name);
-    let output = Command::new("./clickhouse")
+    let sql = format!("INSERT INTO `name_list` VALUES ('{}',[]);", name);
+    let output = Command::new("/Users/wangzekun/clickhouse/clickhouse")
         .arg("client")
         .args(["-d", "default"])
         .arg("-q")
@@ -158,7 +158,7 @@ fn insert_genome(name: &str, genome: &String) {
     WHERE `name` = '{}';",
         genome, name
     );
-    Command::new("./clickhouse")
+    Command::new("/Users/wangzekun/clickhouse/clickhouse")
         .arg("client")
         .args(["-d", "default"])
         .arg("-q")
