@@ -26,6 +26,147 @@ lazy_static! {
     };
 }
 
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let root_path = &args[1];
+    println!("Start from: {}", root_path);
+
+    for child in WalkDir::new(root_path)
+        .max_depth(1)
+        .into_iter()
+        .filter_entry(|entry| !is_hidden(entry))
+        .skip(1)
+    {
+        println!("Completed {}", handle(child.unwrap().into_path(), root_path).unwrap());
+    }
+    println!("Done");
+}
+
+
+fn handle(child: PathBuf, root_path: &String) -> Result<String>{
+    
+    let child_name = child.file_name().unwrap().to_str().unwrap();
+    let walkdir = WalkDir::new(&child);
+    let file_map = analyse_files(walkdir);
+    let new_path = PathBuf::from(root_path).join("csv_files");
+    println!("Start to handle {}", child_name);
+    if !fs::metadata(&new_path).is_ok() {
+        fs::create_dir(&new_path).unwrap();
+    }
+    // insert one row to name_list TABLE
+    insert_name(child_name).unwrap();
+
+    // filemap is (one chromosome,[all files in this chromosome])
+    for (folder_name, files) in file_map {
+        let files = files.iter().map(|e| e.as_str());
+        let mut upstream: u8 = 0;
+        let mut upstream_file = "";
+        let mut complement: u8 = 0;
+        let mut complement_file = "";
+        let mut r_c: u8 = 0;
+        let mut r_c_file = "";
+
+        for file in files {
+            let file = file;
+            let score = HM.get(file).unwrap();
+            if file.contains("r") {
+                if score > &mut r_c {
+                    r_c = *score;
+                    r_c_file = file;
+                }
+            } else if file.contains("c") {
+                if score > &mut complement {
+                    complement = *score;
+                    complement_file = file;
+                }
+            } else {
+                if score > &mut upstream {
+                    upstream = *score;
+                    upstream_file = file;
+                }
+            }
+        }
+
+        let file_name: String = format!("{}${}", child_name, folder_name.replace("-", "_"));
+        let upstream_file = build_path(format!("{}.{}", &folder_name, &upstream_file), &child);
+        let complement_file = build_path(format!("{}.{}", &folder_name, &complement_file), &child);
+        let r_c_file = build_path(format!("{}.{}", &folder_name, &r_c_file), &child);
+        if upstream != 0 {
+            to_csv(upstream_file, new_path.join(format!("{}.csv", &file_name)));
+        }
+        if complement != 0 {
+            to_csv(complement_file,new_path.join(format!("{}$c.csv", &file_name)));
+        }
+        if r_c != 0 {
+            to_csv(r_c_file, new_path.join(format!("{}$rc.csv", &file_name)));
+        }
+
+        // insert one genome with bio name to genome_list TABLE
+        insert_genome(child_name, &file_name);
+    }
+    Ok(child_name.to_string())
+}
+
+fn build_path(s: String, child_path: &PathBuf) -> PathBuf {
+    let mut path = child_path.clone();
+    path.push(s);
+    path
+}
+
+fn import_csv(csv_file: PathBuf) {
+    let table_name = csv_file
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string()
+        .replace(".csv", "");
+    let create_table = String::from(format!("CREATE TABLE IF NOT EXISTS {} (`ID` UInt32, `T1` UInt32, `T2` UInt32, `T3` UInt32, `T4` UInt32, `TS` UInt32, `GS` UInt32, `SEQ` String, `Annotation` String) ENGINE = MergeTree() PRIMARY KEY ID ORDER BY ID SETTINGS index_granularity = 8192, index_granularity_bytes = 0;",table_name));
+    let import_data = String::from(format!(
+        "INSERT INTO {} FROM INFILE '{}' FORMAT CSV;",
+        table_name,
+        csv_file.display()
+    ));
+
+    let sql = format!("{}{}", &create_table, &import_data);
+    Command::new("./clickhouse")
+        .arg("client")
+        .args(["-d", "default"])
+        .arg("-q")
+        .arg(&sql)
+        .output()
+        .expect("Failed to execute command");
+}
+
+fn insert_name(name: &str) -> Result<bool> {
+    let sql = format!("INSERT INTO `name_list` VALUES ('{}', '[]');", name);
+    let output = Command::new("./clickhouse")
+        .arg("client")
+        .args(["-d", "default"])
+        .arg("-q")
+        .arg(&sql)
+        .output()
+        .expect("Failed to execute command: insert_name");
+
+    Ok(output.status.success())
+}
+
+fn insert_genome(name: &str, genome: &String) {
+    let sql = format!(
+        "ALTER TABLE `name_list`
+    UPDATE genomes = arrayConcat(genomes, ['{}'])
+    WHERE `name` = '{}';",
+        genome, name
+    );
+    Command::new("./clickhouse")
+        .arg("client")
+        .args(["-d", "default"])
+        .arg("-q")
+        .arg(&sql)
+        .output()
+        .expect("Failed to execute command: insert_genome");
+}
+
 fn is_hidden(entry: &DirEntry) -> bool {
     entry
         .file_name()
@@ -42,8 +183,8 @@ fn is_txt(entry: &DirEntry) -> bool {
         .unwrap_or(false)
 }
 
-fn to_csv(input: PathBuf, output: PathBuf) -> Result<()> {
-    let mut wtr = csv::Writer::from_path(output).unwrap();
+fn to_csv(input: PathBuf, output: PathBuf) {
+    let mut wtr = csv::Writer::from_path(&output).unwrap();
     let read_file = OpenOptions::new()
         .read(true)
         .open(&input)
@@ -80,6 +221,7 @@ fn to_csv(input: PathBuf, output: PathBuf) -> Result<()> {
             }
             count += 1;
         }
+        // check data length
         if row.len() != 9 {
             println!(
                 "Unlegal Data: '{}' in {}: {}row",
@@ -92,34 +234,7 @@ fn to_csv(input: PathBuf, output: PathBuf) -> Result<()> {
         wtr.write_record(row).expect(&line);
     }
     wtr.flush().expect("flush");
-    Ok(())
-}
-
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let path = &args[1];
-    println!("Start: {}", path);
-
-    for directory in WalkDir::new(path)
-        .max_depth(1)
-        .into_iter()
-        .filter_entry(|entry| !is_hidden(entry))
-        .skip(1)
-    {
-        sort(directory.unwrap().into_path(), path).unwrap();
-    }
-    let mut index = 0;
-    for file in WalkDir::new(format!("{}/csv_files", path))
-        .max_depth(1)
-        .into_iter()
-        .skip(1)
-    {
-        let file = file.unwrap().into_path();
-        import_csv(file);
-        index += 1;
-    }
-    println!("{} files imported", index);
-    println!("Done");
+    import_csv(output);
 }
 
 fn analyse_files(walkdir: WalkDir) -> HashMap<String, Vec<String>> {
@@ -147,103 +262,4 @@ fn analyse_files(walkdir: WalkDir) -> HashMap<String, Vec<String>> {
         }
     }
     file_map
-}
-
-fn sort(root: PathBuf, path: &String) -> Result<()> {
-    let root_name = root.file_name().unwrap().to_str().unwrap();
-    let walkdir = WalkDir::new(&root);
-    let file_map = analyse_files(walkdir);
-    let new_path = PathBuf::from(path).join("csv_files");
-    if !fs::metadata(&new_path).is_ok() {
-        fs::create_dir(&new_path).unwrap();
-    }
-
-    // filemap is (one chromosome,[all files in this chromosome])
-    for (folder_name, files) in file_map {
-        let files = files.iter().map(|e| e.as_str());
-        let mut upstream: u8 = 0;
-        let mut upstream_file = "";
-        let mut complement: u8 = 0;
-        let mut complement_file = "";
-        let mut r_c: u8 = 0;
-        let mut r_c_file = "";
-
-        for file in files {
-            let file = file;
-            let score = HM.get(file).unwrap();
-            if file.contains("r") {
-                if score > &mut r_c {
-                    r_c = *score;
-                    r_c_file = file;
-                }
-            } else if file.contains("c") {
-                if score > &mut complement {
-                    complement = *score;
-                    complement_file = file;
-                }
-            } else {
-                if score > &mut upstream {
-                    upstream = *score;
-                    upstream_file = file;
-                }
-            }
-        }
-
-        let file_name: String = format!("{}${}", root_name, folder_name.replace("-", "_"));
-
-        let upstream_file = build_path(format!("{}.{}", &folder_name, &upstream_file), &root);
-        let complement_file = build_path(format!("{}.{}", &folder_name, &complement_file), &root);
-        let r_c_file = build_path(format!("{}.{}", &folder_name, &r_c_file), &root);
-
-        if upstream != 0 {
-            to_csv(upstream_file, new_path.join(format!("{}.csv", file_name))).unwrap();
-        }
-        if complement != 0 {
-            to_csv(
-                complement_file,
-                new_path.join(format!("{}$c.csv", file_name)),
-            )
-            .unwrap();
-        }
-        if r_c != 0 {
-            to_csv(r_c_file, new_path.join(format!("{}$rc.csv", file_name))).unwrap();
-        }
-    }
-    Ok(())
-}
-
-fn build_path(s: String, root_path: &PathBuf) -> PathBuf {
-    let mut path = root_path.clone();
-    path.push(s);
-    path
-}
-
-fn import_csv(csv_file: PathBuf) {
-    let table_name = csv_file
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string()
-        .replace(".csv", "");
-    let create_table = String::from(format!("CREATE TABLE IF NOT EXISTS {} (`ID` UInt32, `T1` UInt32, `T2` UInt32, `T3` UInt32, `T4` UInt32, `TS` UInt32, `GS` UInt32, `SEQ` String, `Annotation` String) ENGINE = MergeTree() PRIMARY KEY ID ORDER BY ID SETTINGS index_granularity = 8192, index_granularity_bytes = 0;",table_name));
-    let import_data = String::from(format!(
-        "INSERT INTO {} FROM INFILE '{}' FORMAT CSV;",
-        table_name,
-        csv_file.display()
-    ));
-    let sql = format!("{}{}", &create_table, &import_data);
-    let output = Command::new("./clickhouse")
-    .arg("client")
-        .args(["-d", "default"])
-        .arg("-q")
-        .arg(&sql)
-        .output()
-        .expect("Failed to execute command");
-    if output.status.success() {
-        println!("Table {} imported successfully", table_name);
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("Failed to import table {}. Error:\n{}", table_name, stderr);
-    }
 }
