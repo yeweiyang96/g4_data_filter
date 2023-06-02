@@ -139,7 +139,7 @@ fn import_csv(csv_file: PathBuf) {
 }
 
 fn insert_name(name: &str) -> Result<bool> {
-    let sql = format!("INSERT INTO `name_list` VALUES ('{}', '[]');", name);
+    let sql = format!("INSERT INTO `name_list` VALUES ('{}', []);", name);
     let output = Command::new("./clickhouse")
         .arg("client")
         .args(["-d", "default"])
