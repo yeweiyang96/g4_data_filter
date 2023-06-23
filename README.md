@@ -16,6 +16,9 @@ create table taxonomy
 ```
 在程序所在目录创建文件夹'arrow'
 
+## use
+运行程序时, 参数是要扫描的文件的地址
+
 ## last
 执行python脚本,给所有物种增加学名.
 ```
