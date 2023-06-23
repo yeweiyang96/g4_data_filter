@@ -1,12 +1,14 @@
 extern crate csv;
+use arrow::datatypes::{DataType, Field, Schema};
+use arrow::{csv::ReaderBuilder, error::ArrowError, ipc::writer::FileWriter};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use std::fs;
 use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io::{prelude::*, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
-use walkdir::Result;
+use std::sync::Arc;
 use walkdir::{DirEntry, WalkDir};
 
 lazy_static! {
@@ -37,14 +39,15 @@ fn main() {
         .filter_entry(|entry| !is_hidden(entry))
         .skip(1)
     {
-        println!("Completed {}", handle(child.unwrap().into_path(), root_path).unwrap());
+        println!(
+            "Completed {}",
+            handle(child.unwrap().into_path(), root_path)
+        );
     }
     println!("Done");
 }
 
-
-fn handle(child: PathBuf, root_path: &String) -> Result<String>{
-    
+fn handle(child: PathBuf, root_path: &String) -> String {
     let child_name = child.file_name().unwrap().to_str().unwrap();
     let walkdir = WalkDir::new(&child);
     let file_map = analyse_files(walkdir);
@@ -53,8 +56,10 @@ fn handle(child: PathBuf, root_path: &String) -> Result<String>{
     if !fs::metadata(&new_path).is_ok() {
         fs::create_dir(&new_path).unwrap();
     }
-    // insert one row to name_list TABLE
-    insert_name(child_name).unwrap();
+    // insert one row to taxonomy TABLE
+    if !insert_name(child_name){
+        println!("Failed: Insert {} to taxonomy TABLE", child_name);
+    }
 
     // filemap is (one chromosome,[all files in this chromosome])
     for (folder_name, files) in file_map {
@@ -92,19 +97,25 @@ fn handle(child: PathBuf, root_path: &String) -> Result<String>{
         let complement_file = build_path(format!("{}.{}", &folder_name, &complement_file), &child);
         let r_c_file = build_path(format!("{}.{}", &folder_name, &r_c_file), &child);
         if upstream != 0 {
-            to_csv(upstream_file, new_path.join(format!("{}.csv", &file_name)));
+            to_csv(
+                upstream_file,
+                new_path.join(format!("{}$up.csv", &file_name)),
+            );
         }
         if complement != 0 {
-            to_csv(complement_file,new_path.join(format!("{}$c.csv", &file_name)));
+            to_csv(
+                complement_file,
+                new_path.join(format!("{}$c.csv", &file_name)),
+            );
         }
         if r_c != 0 {
             to_csv(r_c_file, new_path.join(format!("{}$rc.csv", &file_name)));
         }
 
         // insert one genome with bio name to genome_list TABLE
-        insert_genome(child_name, &file_name);
+        insert_genome(child_name, &folder_name.replace("-", "_"));
     }
-    Ok(child_name.to_string())
+    child_name.to_string()
 }
 
 fn build_path(s: String, child_path: &PathBuf) -> PathBuf {
@@ -136,10 +147,15 @@ fn import_csv(csv_file: PathBuf) {
         .arg(&sql)
         .output()
         .expect("Failed to execute command");
+    match to_arrow_ipc(csv_file) {
+        Ok(_) => {},
+        Err(e) => println!("Convert Failed: {}", e),
+        
+    }
 }
-
-fn insert_name(name: &str) -> Result<bool> {
-    let sql = format!("INSERT INTO `name_list` VALUES ('{}',[]);", name);
+// insert one row to taxonomy TABLE
+fn insert_name(name: &str) -> bool {
+    let sql = format!("INSERT INTO `taxonomy` VALUES ('{}','',[]);", name);
     let output = Command::new("/Users/wangzekun/clickhouse/clickhouse")
         .arg("client")
         .args(["-d", "default"])
@@ -147,15 +163,14 @@ fn insert_name(name: &str) -> Result<bool> {
         .arg(&sql)
         .output()
         .expect("Failed to execute command: insert_name");
-
-    Ok(output.status.success())
+    output.status.success()
 }
-
+//每上传一条染色体,往taxonomy表的对应的物种的genomes里插入一个染色体的名字
 fn insert_genome(name: &str, genome: &String) {
     let sql = format!(
-        "ALTER TABLE `name_list`
+        "ALTER TABLE `taxonomy`
     UPDATE genomes = arrayConcat(genomes, ['{}'])
-    WHERE `name` = '{}';",
+    WHERE `abbreviation` = '{}';",
         genome, name
     );
     Command::new("/Users/wangzekun/clickhouse/clickhouse")
@@ -235,6 +250,7 @@ fn to_csv(input: PathBuf, output: PathBuf) {
     }
     wtr.flush().expect("flush");
     import_csv(output);
+    
 }
 
 fn analyse_files(walkdir: WalkDir) -> HashMap<String, Vec<String>> {
@@ -262,4 +278,44 @@ fn analyse_files(walkdir: WalkDir) -> HashMap<String, Vec<String>> {
         }
     }
     file_map
+}
+
+fn to_arrow_ipc(csv_file: PathBuf) -> Result<(), ArrowError> {
+    let schema = Schema::new(vec![
+        Field::new("ID", DataType::UInt32, false),
+        Field::new("T1", DataType::UInt32, false),
+        Field::new("T2", DataType::UInt32, false),
+        Field::new("T3", DataType::UInt32, false),
+        Field::new("T4", DataType::UInt32, false),
+        Field::new("TS", DataType::UInt32, false),
+        Field::new("GS", DataType::UInt32, false),
+        Field::new("SEQ", DataType::Utf8, false),
+        Field::new("Annotation", DataType::Utf8, false),
+    ]);
+    let schema_ref = Arc::new(schema);
+    let builder = ReaderBuilder::new(schema_ref).has_header(true);
+    // .with_delimiter(opts.delimiter as u8);
+    let file = File::open(&csv_file).unwrap();
+    let reader = builder.build(file).unwrap();
+    let path = csv_file
+    .file_name()
+    .unwrap()
+    .to_str()
+    .unwrap()
+    .to_string()
+    .replace(".csv", ".arrow");
+    let out_path = String::from("./arrow/") + &path;
+    let output = File::create(out_path)
+        .map(|f| Box::new(f) as Box<dyn Write>)
+        .unwrap();
+
+    let mut writer = FileWriter::try_new(output, reader.schema().as_ref()).unwrap();
+
+    for batch in reader {
+        match batch {
+            Ok(batch) => writer.write(&batch).unwrap(),
+            Err(error) => return Err(error),
+        }
+    }
+    writer.finish()
 }
