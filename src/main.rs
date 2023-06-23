@@ -140,13 +140,9 @@ fn import_csv(csv_file: PathBuf) {
     ));
 
     let sql = format!("{}{}", &create_table, &import_data);
-    Command::new("/Users/wangzekun/clickhouse/clickhouse")
-        .arg("client")
-        .args(["-d", "default"])
-        .arg("-q")
-        .arg(&sql)
-        .output()
-        .expect("Failed to execute command");
+    if !execute_sql(&sql) {
+        println!("Failed: {}", &sql);
+    }
     match to_arrow_ipc(csv_file) {
         Ok(_) => {},
         Err(e) => println!("Convert Failed: {}", e),
@@ -156,14 +152,7 @@ fn import_csv(csv_file: PathBuf) {
 // insert one row to taxonomy TABLE
 fn insert_name(name: &str) -> bool {
     let sql = format!("INSERT INTO `taxonomy` VALUES ('{}','',[]);", name);
-    let output = Command::new("/Users/wangzekun/clickhouse/clickhouse")
-        .arg("client")
-        .args(["-d", "default"])
-        .arg("-q")
-        .arg(&sql)
-        .output()
-        .expect("Failed to execute command: insert_name");
-    output.status.success()
+    execute_sql(&sql)
 }
 //每上传一条染色体,往taxonomy表的对应的物种的genomes里插入一个染色体的名字
 fn insert_genome(name: &str, genome: &String) {
@@ -173,13 +162,9 @@ fn insert_genome(name: &str, genome: &String) {
     WHERE `abbreviation` = '{}';",
         genome, name
     );
-    Command::new("/Users/wangzekun/clickhouse/clickhouse")
-        .arg("client")
-        .args(["-d", "default"])
-        .arg("-q")
-        .arg(&sql)
-        .output()
-        .expect("Failed to execute command: insert_genome");
+    if !execute_sql(&sql) {
+        println!("Failed: {}", &sql);
+    }
 }
 
 fn is_hidden(entry: &DirEntry) -> bool {
@@ -318,4 +303,15 @@ fn to_arrow_ipc(csv_file: PathBuf) -> Result<(), ArrowError> {
         }
     }
     writer.finish()
+}
+
+fn execute_sql(sql: &str) -> bool {
+    let output = Command::new("/Users/wangzekun/clickhouse/clickhouse")
+        .arg("client")
+        .args(["-d", "default"])
+        .arg("-q")
+        .arg(sql)
+        .output()
+        .expect("Failed to execute command: execute_sql");
+    output.status.success()
 }
