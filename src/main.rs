@@ -33,7 +33,7 @@ fn main() {
     let root_path = &args[1];
     println!("Start from: {}", root_path);
 
-    for child in WalkDir::new(root_path)
+    for organism in WalkDir::new(root_path)
         .max_depth(1)
         .into_iter()
         .filter_entry(|entry| !is_hidden(entry))
@@ -41,29 +41,29 @@ fn main() {
     {
         println!(
             "Completed {}",
-            handle(child.unwrap().into_path(), root_path)
+            handle(organism.unwrap().into_path(), root_path)
         );
     }
     println!("Done");
 }
 
-fn handle(child: PathBuf, root_path: &String) -> String {
-    let child_name = child.file_name().unwrap().to_str().unwrap();
-    let walkdir = WalkDir::new(&child);
+fn handle(organism: PathBuf, root_path: &String) -> String {
+    let organism_name = organism.file_name().unwrap().to_str().unwrap();
+    let walkdir = WalkDir::new(&organism);
     let file_map = analyse_files(walkdir);
     let new_path = PathBuf::from(root_path).join(".csv_files");
-    println!("Start to handle {}", child_name);
+    println!("Start to handle {}", organism_name);
     if !fs::metadata(&new_path).is_ok() {
         fs::create_dir(&new_path).unwrap();
     }
     // insert one row to taxonomy TABLE
-    if !insert_name(child_name){
-        println!("Failed: Insert {} to taxonomy TABLE", child_name);
+    if !insert_name(organism_name){
+        println!("Failed: Insert {} to taxonomy TABLE", organism_name);
     }
 
     // filemap is (one chromosome,[all files in this chromosome])
-    for (folder_name, files) in file_map {
-        let files = files.iter().map(|e| e.as_str());
+    for (genetic_material_name, postfixes) in file_map {
+        let postfixes = postfixes.iter().map(|e| e.as_str());
         let mut upstream: u8 = 0;
         let mut upstream_file = "";
         let mut complement: u8 = 0;
@@ -71,7 +71,7 @@ fn handle(child: PathBuf, root_path: &String) -> String {
         let mut r_c: u8 = 0;
         let mut r_c_file = "";
 
-        for file in files {
+        for file in postfixes {
             let file = file;
             let score = HM.get(file).unwrap();
             if file.contains("r") {
@@ -92,10 +92,10 @@ fn handle(child: PathBuf, root_path: &String) -> String {
             }
         }
 
-        let file_name: String = format!("{}${}", child_name, folder_name.replace("-", "_"));
-        let upstream_file = build_path(format!("{}.{}", &folder_name, &upstream_file), &child);
-        let complement_file = build_path(format!("{}.{}", &folder_name, &complement_file), &child);
-        let r_c_file = build_path(format!("{}.{}", &folder_name, &r_c_file), &child);
+        let file_name: String = format!("{}${}", organism_name, genetic_material_name.replace("-", "_"));
+        let upstream_file = build_path(format!("{}.{}", &genetic_material_name, &upstream_file), &organism);
+        let complement_file = build_path(format!("{}.{}", &genetic_material_name, &complement_file), &organism);
+        let r_c_file = build_path(format!("{}.{}", &genetic_material_name, &r_c_file), &organism);
         if upstream != 0 {
             to_csv(
                 upstream_file,
@@ -113,9 +113,9 @@ fn handle(child: PathBuf, root_path: &String) -> String {
         }
 
         // insert one genome with bio name to genome_list TABLE
-        insert_genome(child_name, &folder_name.replace("-", "_"));
+        insert_genome(organism_name, &genetic_material_name.replace("-", "_"));
     }
-    child_name.to_string()
+    organism_name.to_string()
 }
 
 fn build_path(s: String, child_path: &PathBuf) -> PathBuf {
