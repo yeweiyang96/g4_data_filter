@@ -20,9 +20,9 @@ lazy_static! {
             ("c.txt", 4),
             ("c.add_gene.txt", 5),
             ("c.add_gene.2.txt", 6),
-            ("c.r.txt", 7),
-            ("c.r.add_gene.txt", 8),
-            ("c.r.add_gene.2.txt", 9),
+            // ("c.r.txt", 7),
+            // ("c.r.add_gene.txt", 8),
+            // ("c.r.add_gene.2.txt", 9),
         ]);
         m
     };
@@ -64,42 +64,43 @@ fn handle(organism: PathBuf, root_path: &String) -> String {
     // filemap is (one chromosome,[all files in this chromosome])
     for (genetic_material_name, postfixes) in file_map {
         let postfixes = postfixes.iter().map(|e| e.as_str());
-        let mut upstream: u8 = 0;
-        let mut upstream_file = "";
+        let mut raw: u8 = 0;
+        let mut raw_file = "";
         let mut complement: u8 = 0;
         let mut complement_file = "";
-        let mut r_c: u8 = 0;
-        let mut r_c_file = "";
+        // let mut r_c: u8 = 0;
+        // let mut r_c_file = "";
 
         for file in postfixes {
             let file = file;
             let score = HM.get(file).unwrap();
             if file.contains("r") {
-                if score > &mut r_c {
-                    r_c = *score;
-                    r_c_file = file;
-                }
+                continue;
+                // if score > &mut r_c {
+                //     r_c = *score;
+                //     r_c_file = file;
+                // }
             } else if file.contains("c") {
                 if score > &mut complement {
                     complement = *score;
                     complement_file = file;
                 }
             } else {
-                if score > &mut upstream {
-                    upstream = *score;
-                    upstream_file = file;
+                if score > &mut raw {
+                    raw = *score;
+                    raw_file = file;
                 }
             }
         }
 
         let file_name: String = format!("{}${}", organism_name, genetic_material_name.replace("-", "_"));
-        let upstream_file = build_path(format!("{}.{}", &genetic_material_name, &upstream_file), &organism);
+        let raw_file = build_path(format!("{}.{}", &genetic_material_name, &raw_file), &organism);
         let complement_file = build_path(format!("{}.{}", &genetic_material_name, &complement_file), &organism);
-        let r_c_file = build_path(format!("{}.{}", &genetic_material_name, &r_c_file), &organism);
-        if upstream != 0 {
+        // let r_c_file = build_path(format!("{}.{}", &genetic_material_name, &r_c_file), &organism);
+        if raw != 0 {
             to_csv(
-                upstream_file,
-                new_path.join(format!("{}$up.csv", &file_name)),
+                raw_file,
+                new_path.join(format!("{}$raw.csv", &file_name)),
             );
         }
         if complement != 0 {
@@ -108,9 +109,9 @@ fn handle(organism: PathBuf, root_path: &String) -> String {
                 new_path.join(format!("{}$c.csv", &file_name)),
             );
         }
-        if r_c != 0 {
-            to_csv(r_c_file, new_path.join(format!("{}$rc.csv", &file_name)));
-        }
+        // if r_c != 0 {
+        //     to_csv(r_c_file, new_path.join(format!("{}$rc.csv", &file_name)));
+        // }
 
         // insert one genome with bio name to genome_list TABLE
         insert_genome(organism_name, &genetic_material_name.replace("-", "_"));
@@ -132,7 +133,7 @@ fn import_csv(csv_file: PathBuf) {
         .unwrap()
         .to_string()
         .replace(".csv", "");
-    let create_table = String::from(format!("CREATE TABLE IF NOT EXISTS {} (`ID` UInt32, `T1` UInt32, `T2` UInt32, `T3` UInt32, `T4` UInt32, `TS` UInt32, `GS` UInt32, `SEQ` String, `Annotation` String) ENGINE = MergeTree() PRIMARY KEY ID ORDER BY ID SETTINGS index_granularity = 8192, index_granularity_bytes = 0;",table_name));
+    let create_table = String::from(format!("CREATE TABLE IF NOT EXISTS {} (`ID` UInt32, `T1` UInt32, `T2` UInt32, `T3` UInt32, `T4` UInt32, `TS` UInt32, `GS` UInt32, `SEQ` String, `Gene` String) ENGINE = MergeTree() PRIMARY KEY ID ORDER BY ID SETTINGS index_granularity = 8192, index_granularity_bytes = 0;",table_name));
     let import_data = String::from(format!(
         "INSERT INTO {} FROM INFILE '{}' FORMAT CSV;",
         table_name,
@@ -201,7 +202,7 @@ fn to_csv(input: PathBuf, output: PathBuf) {
         "TS",
         "GS",
         "SEQ",
-        "Annotation",
+        "Gene",
     ])
     .expect("header fail");
     for line in lines_iter {
@@ -275,7 +276,7 @@ fn to_arrow_ipc(csv_file: PathBuf) -> Result<(), ArrowError> {
         Field::new("TS", DataType::UInt32, false),
         Field::new("GS", DataType::UInt32, false),
         Field::new("SEQ", DataType::Utf8, false),
-        Field::new("Annotation", DataType::Utf8, false),
+        Field::new("Gene", DataType::Utf8, false),
     ]);
     let schema_ref = Arc::new(schema);
     let builder = ReaderBuilder::new(schema_ref).has_header(true);
@@ -308,7 +309,7 @@ fn to_arrow_ipc(csv_file: PathBuf) -> Result<(), ArrowError> {
 fn execute_sql(sql: &str) -> bool {
     let output = Command::new("/Users/wangzekun/clickhouse/clickhouse")
         .arg("client")
-        .args(["-d", "default"])
+        .args(["-d", "g4"])
         .arg("-q")
         .arg(sql)
         .output()
