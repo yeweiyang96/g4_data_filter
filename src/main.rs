@@ -16,7 +16,10 @@ lazy_static! {
             ("add_gene.2.txt", 3),
             ("c.txt", 4),
             ("c.add_gene.txt", 5),
-            ("c.add_gene.2.txt", 6)
+            ("c.add_gene.2.txt", 6),
+            ("c.r.txt", 7),
+            ("c.r.add_gene.txt", 8),
+            ("c.r.add_gene.2.txt", 9),
         ]);
         m
     };
@@ -56,19 +59,20 @@ fn handle(organism: PathBuf, root_path: &String) -> String {
         let mut raw_file = "";
         let mut complement: u8 = 0;
         let mut complement_file = "";
+
         for file in postfixes {
-            let file = file;
-            let score = HM.get(file).unwrap();
+
+            let score = *HM.get(file).unwrap();
             if file.contains("r") {
                 continue;
             } else if file.contains("c") {
-                if score > &mut complement {
-                    complement = *score;
+                if score > complement {
+                    complement = score;
                     complement_file = file;
                 }
             } else {
-                if score > &mut raw {
-                    raw = *score;
+                if score > raw {
+                    raw = score;
                     raw_file = file;
                 }
             }
@@ -181,10 +185,32 @@ fn analyse_files(walkdir: WalkDir) -> HashMap<String, Vec<String>> {
             .unwrap()
             .to_string();
         let file_parts: Vec<&str> = file_name.splitn(2, ".").collect();
-        if let Some(files) = file_map.get_mut(file_parts[0]) {
-            files.push(file_parts[1].to_string());
+        let mut genetic_material_name = file_parts[0].to_string();
+        let mut postfixes = file_parts[1];
+        loop {
+            match HM.get(&postfixes) {
+                Some(_) => {
+                    break;
+                },
+                None => {
+                    if let Some(index) = postfixes.find('.') {
+                        let add_word = &postfixes[..index];
+                        genetic_material_name = format!("{}.{}", genetic_material_name, add_word);
+                        postfixes = &postfixes[index+1..];
+                        
+                    } else {
+                        // Handle the case where there are no more dots in the file string
+                        print!("Unlegal file name: {}", file_name);
+                        break;
+                    }
+                }
+            }
+        }
+        //判断数组中有没有这个染色体
+        if let Some(files) = file_map.get_mut(&genetic_material_name) {
+            files.push(postfixes.to_string());
         } else {
-            file_map.insert(file_parts[0].to_string(), vec![file_parts[1].to_string()]);
+            file_map.insert(genetic_material_name, vec![postfixes.to_string()]);
         }
     }
     file_map
