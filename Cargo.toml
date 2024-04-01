@@ -1,7 +1,7 @@
 [package]
-name = "csv_handle"
-version = "0.1.0"
-edition = "2021"
+name = "g4_data_filter"
+version = "2.2.0"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -9,4 +9,3 @@ edition = "2021"
 walkdir = "2"
 csv = "1.2"
 lazy_static = "1.4.0"
-arrow = "42.0.0"
