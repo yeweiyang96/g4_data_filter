@@ -38,7 +38,7 @@ fn main() {
             handle(organism.unwrap().into_path(), root_path)
         );
     }
-    println!("Done");
+    println!("Done,plz open the .csv_files folder to check the result.(hiding)");
 }
 
 fn handle(organism: PathBuf, root_path: &String) -> String {

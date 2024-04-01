@@ -1,0 +1,26 @@
+{
+	// 使用 IntelliSense 了解相关属性。 
+	// 悬停以查看现有属性的描述。
+	// 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug executable 'csv_handle'",
+			"cargo": {
+				"args": [
+					"build",
+					"--bin=csv_handle",
+					"--package=csv_handle"
+				],
+				"filter": {
+					"name": "csv_handle",
+					"kind": "bin"
+				}
+			},
+			"args": ["/Users/wangzekun/Desktop/database/g4/data/raw_g4_data_computed"], // 在这里添加你的参数
+			"cwd": "${workspaceFolder}"
+		}
+	]
+}
